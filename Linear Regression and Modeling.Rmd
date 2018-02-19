@@ -1,0 +1,115 @@
+* * *
+  
+## Part 1: Data
+  The dataset was collected from randomly sampled movies that were produced and released before 2016. However, going through the data, it seems as if very few, if any, international (non-US) films are present. So while the data is generalizable, it would only be for US-made movies. There was also no random assignment used so causality cannot be inferred.
+
+* * *
+  
+## Part 2: Research question
+I would like to model the audience score a movie receives on Rotten Tomatoes (audence_score) based on the variables present in the dataset.
+
+
+* * *
+  
+## Part 3: Exploratory data analysis
+  
+```{r}
+movies1 <- movies[, -c(1,6,8:12,14:15,17,25:32)]
+movies1$year <- movies$thtr_rel_year - 1970
+movies1$thtr_rel_year <- NULL
+summary(movies1)
+```
+
+I first removed the variables that either would be unnecessary (movie title, day/month of movie and DVD releases, and URLs) or would be too difficult to analyze (while directors and actors could certainly impact a viewer's rating, there are simply too many to analyze). I then set the year of the movie's release relative to 1970, which is the year the earliest movie in the dataset was released. Now, I will look into which variables are colinear with each other:
+
+```{r}
+ggcorr(movies1)
+movies1$imdb_rating <- NULL
+```
+      
+We see here that audience_score, critics_score, and imdb_rating are all highly correlated with each other, which makes sense. Since imdb_rating and critics_score are highly correlated with each other, I will be removing imdb_rating from my analysis. Runtime and year, the only other two numerical variables, are not highly correlated with any of the variables, so no multicollinearity exists there and will not be removed.
+
+## Part 4: Modeling
+
+I will be using backwards elimination using the p-value method. Each time, I will drop the variable with the highest p-value until each variable remaining is statistically significant. For the full model, I will be considering title_type, genre, runtime, mpaa_rating, critics_score, best_pic_nom, best_pic_win, best_actor/actress/director_win, top200_box, and year (relative to 1970).
+
+```{r}
+score1 <- lm(audience_score ~ title_type + genre + runtime + mpaa_rating + critics_score + best_pic_nom + best_pic_win + best_actor_win + best_actress_win + best_dir_win + top200_box + year, movies1)
+summary(score1)
+```
+
+From the full model, the variable "best_dir_win" had a p-value of 0.93 so that was the first one removed. An initial adjusted $R^2$ of 0.5247 is only a moderate fit, but it should increase as non-significant variables are removed. Since this method will take up a lot of space, I will only show the final summary at the end and will comment on which variables are removed and any observations made at the end as well. 
+
+```{r}
+score2 <- lm(audience_score ~ title_type + genre + runtime + mpaa_rating + critics_score + best_pic_nom + best_pic_win + best_actor_win + best_actress_win + top200_box + year, movies1)
+
+score3 <- lm(audience_score ~ title_type + genre + runtime + mpaa_rating + critics_score + best_pic_nom + best_actor_win + best_actress_win + top200_box + year, movies1)
+
+score4 <- lm(audience_score ~ title_type + genre + runtime + mpaa_rating + critics_score + best_pic_nom + best_actor_win + best_actress_win + top200_box, movies1)
+
+score5 <- lm(audience_score ~ genre + runtime + mpaa_rating + critics_score + best_pic_nom + best_actor_win + best_actress_win + top200_box, movies1)
+
+score6 <- lm(audience_score ~ genre + runtime + mpaa_rating + critics_score + best_pic_nom + best_actress_win + top200_box, movies1)
+
+score7 <- lm(audience_score ~ genre + runtime + mpaa_rating + critics_score + best_pic_nom + best_actress_win, movies1)
+
+score8 <- lm(audience_score ~ genre + runtime + critics_score + best_pic_nom + best_actress_win, movies1)
+
+score9 <- lm(audience_score ~ genre + runtime + critics_score + best_pic_nom, movies1)
+
+score10 <- lm(audience_score ~ genre + critics_score + best_pic_nom, movies1)
+score_final <- score10
+summary(score_final)
+```
+
+### Model Diagnostics
+1. Linear relationship between numeric x and y
+```{r}
+plot(score_final$residuals ~ movies1$critics_score)
+```
+
+There does not appear to be any pattern and a random scatter around 0 exits.
+
+2. Nearly normal residuals with mean 0
+```{r}
+qqnorm(score_final$residuals)
+```
+
+The normal probability plot shows a mostly straight line with very little skewness in the tails. 
+
+3. Constant variability of residuals
+```{r}
+plot(score_final$residuals ~ score_final$fitted.values)
+plot(abs(score_final$residuals) ~ score_final$fitted.values)
+```
+
+In the first plot, there seems to be a little bit of a funnell shape. However, looking at the absolute values of the residuals does not show much of a triangle-shape. 
+
+4. Independent residuals (observations)
+```{r}
+plot(score_final$residuals)
+```
+
+The residuals are randomly scattered with no apparent pattern. As a result, all diagnostics have been satisified.
+
+* * *
+  
+  ## Part 5: Prediction
+  
+  For my prediction, I will be looking at the documentary "OJ: Made in America" which was a 5 part mini series played on ESPN as part of their *30 for 30* series. It received a [critic score on Rotten Tomatoes of 100%](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=24&cad=rja&uact=8&ved=0ahUKEwjnrv7c4ebXAhWlkOAKHTcADVUQoiQIvQEwFw&url=https%3A%2F%2Fwww.rottentomatoes.com%2Fm%2Foj_made_in_america%2F&usg=AOvVaw3hcu68S930KrwZumC6ESGh) and was [nominated](https://www.theverge.com/2017/2/26/14700746/oscars-2017-oj-made-in-america-best-documentary-winner) (and won) for an Oscar for "Best Documentary Feature". 
+```{r}
+oj <- data.frame(genre = "Documentary", critics_score = 100, best_pic_nom = "yes")
+
+predict(score_final, oj)
+
+predict(score_final, oj, interval = "predict", level = 0.95)
+```
+
+My prediction of 98.9% is very close to the actual audience score of 98%. The model also predicts with 95% confidence that a documentary that receives a critic score of 100% on Rotten Tomatoes and is nominated for an Oscar will have an audience score on RT between 70.6% and 100% (it does not make sense for a movie to recieve a score greater than 100%). 
+
+* * *
+  
+  ## Part 6: Conclusion
+  It is interesting that whether or not a movie *won* an Oscar did not matter, only that the movie was *nominated*. Perhaps this is because any movie that was nominateed would already be well received by the public. Other than that, I did not notice anything else that really surprised me; I expected all the variables that were dropped from the full model to be dropped.
+
+One shortcoming in the model could be that, if a genre that is not statistically significant is chosen, the model could end up being somewhat inaccurate (perhaps this is part of the reason why the adjusted $R^2$ in the final model is low). 

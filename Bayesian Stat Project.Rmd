@@ -1,0 +1,175 @@
+---
+title: "Bayesian modeling and prediction for movies"
+output: 
+html_document: 
+fig_height: 4
+highlight: pygments
+theme: spacelab
+---
+  
+  ## Setup
+  
+  ### Load packages
+  
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(BAS)
+```
+
+### Load data
+
+```{r load-data}
+load("C:/Users/hgupta/Desktop/R stuff/Coursera/Data/movies.RData")
+```
+
+
+
+* * *
+  
+## Part 1: Data
+The dataset was collected from randomly sampled movies that were produced and released before 2016. However, going through the data, it seems as if very few, if any, international (non-US) films are present. So while the data is generalizable, it would only be for US-made movies. There was also no random assignment used so causality cannot be inferred.
+  
+* * *
+  
+## Part 2: Data manipulation
+  
+```{r}
+movies$feature_film <- ifelse(movies$title_type=="Feature Film","yes","no")
+movies$feature_film <- as.factor(movies$feature_film)
+
+movies$drama <- ifelse(movies$genre=="Drama","yes","no")
+movies$drama <- as.factor(movies$drama)
+
+movies$mpaa_rating_R <- ifelse(movies$mpaa_rating=="R","yes","no")
+movies$mpaa_rating_R <- as.factor(movies$mpaa_rating_R)
+
+movies$oscar_season <- ifelse(movies$thtr_rel_month==10 | movies$thtr_rel_month==11 | movies$thtr_rel_month==12,"yes","no")
+movies$oscar_season <- as.factor(movies$oscar_season)
+
+movies$summer_season <- ifelse(movies$thtr_rel_month==5 | movies$thtr_rel_month==6 | movies$thtr_rel_month==7 | movies$thtr_rel_month==8 ,"yes","no")
+movies$summer_season <- as.factor(movies$summer_season)
+```
+
+
+* * *
+  
+## Part 3: Exploratory data analysis
+### Audience Score vs. Feature Film  
+```{r warning=FALSE}
+movies %>%
+  group_by(feature_film) %>%
+  summarise(count=n(), avg_score=round(mean(audience_score),2))
+
+ggplot(movies, aes(x=feature_film, y=audience_score)) +
+  geom_boxplot()
+
+inference(audience_score, feature_film, data = movies, type = "ht", statistic = "mean", method = "theoretical", alternative = "twosided")
+```
+
+Here, we can clearly see that the vast majority of movies in this dataset are feature films and that non-feature films (mostly documentaries) generally have a higher audience score. This may be due to sample size, or perhaps documentaries are mostly seen by those who already are invested in that topic so they would naturally garner a better response from its audience. Since both distributions are roughly symetric, I ran a hypothesis test to determine whether the difference in average audience scores is statistically significant. With such a large difference between them, it is not surprising that they are statisically different. 
+
+### Audience Score vs. Drama
+```{r warning=FALSE}
+movies %>%
+  group_by(drama) %>%
+  summarise(count=n(), avg_score=round(mean(audience_score),2))
+
+ggplot(movies, aes(x=drama, y=audience_score)) +
+  geom_boxplot()
+
+inference(audience_score, drama, data = movies, type = "ht", statistic = "mean", method = "theoretical", alternative = "twosided")
+```
+
+Comparing *audience_score* to the newly created variable *drama* yields a much closer comparison than *feature_film* did. Drama films on average score about 6 points better than all others, which is still statistically significant (p=0.0004). While the boxplow shows a slight left skew for drama films, it does not look to be significant as to impacat the test in any way. 
+
+### Audience Score vs. MPAA Rating
+```{r warning=FALSE}
+movies %>%
+  group_by(mpaa_rating_R) %>%
+  summarise(count=n(), avg_score=round(mean(audience_score),2))
+
+ggplot(movies, aes(x=mpaa_rating_R, y=audience_score)) +
+  geom_boxplot()
+
+inference(audience_score, mpaa_rating_R, data = movies, type = "ht", statistic = "mean", method = "theoretical", alternative = "twosided")
+```
+
+There does not seem to be much of a difference at all between R rated films and non-R rated films. They both have an audience score of roughly 62 with identical distributions. As such, the hypothesis test shows that there is no significant difference in audiences scores between R rated films and non-R rated films (p=0.68).
+
+### Audience Score vs. Oscar Season
+```{r warning=FALSE}
+movies %>%
+  group_by(oscar_season) %>%
+  summarise(count=n(), avg_score=round(mean(audience_score),2))
+
+ggplot(movies, aes(x=oscar_season, y=audience_score)) +
+  geom_boxplot()
+
+inference(audience_score, oscar_season, data = movies, type = "ht", statistic = "mean", method = "theoretical", alternative = "twosided")
+```
+
+The distributions of movies released during Oscar and non-Oscar seasons are very similar with both being slightly left skewed. While not statistically significant (p=0.29), movies released suring the Oscar months perform better on average by almost 2 points than movies released in all other months. 
+
+### Audience Score vs. Summer Season
+```{r warning=FALSE}
+movies %>%
+  group_by(summer_season) %>%
+  summarise(count=n(), avg_score=round(mean(audience_score),2))
+
+ggplot(movies, aes(x=summer_season, y=audience_score)) +
+  geom_boxplot()
+
+inference(audience_score, summer_season, data = movies, type = "ht", statistic = "mean", method = "theoretical", alternative = "twosided")
+```
+
+It is commonly thought that the best movies are released during the summer months but according to the data, that may just be a marketing tactic to get people to watch more movies. In fact, movies released during *non-summer* months receive a slightly higher audience score (although not statistically significant with a p-value of 0.63). 
+
+* * *
+  
+## Part 4: Modeling
+
+```{r warning=FALSE}
+movies1 <- movies %>%
+  select(audience_score, feature_film, drama, runtime, mpaa_rating_R, thtr_rel_year, oscar_season, summer_season, imdb_rating, imdb_num_votes, critics_score, best_pic_nom, best_pic_win, best_actor_win, best_actress_win, best_dir_win, top200_box)
+
+model <- bas.lm(audience_score ~ . , data = movies1,
+                prior = "BIC", modelprior = uniform())
+summary(model)
+coefficients(model)
+```
+The most likely variables to be included in the model are *Intercept*, *runtime* (posterior prob=0.47), *imdb_rating* (1.0), and *critics_score* (0.89). It is interesting to note that *runtime* is included in the most likely model even though its posterior probability is less than 0.50. It may not have a big impact on the results though, since removing it only lowers the posterior probability of the model by 0.0004 and the $R^2$ by 0.0024 (Model 2 vs Model 1). Considering the uniform prior on 2^17 possible models, the posterior probabiliy of ~.129 for the first two models is very siginificant. The coefficients for the model refer to how much a one unit increase (or a "yes" answer) raises or lowers the audience's score. For example, each additional minute a movie runs lowers *audience_score* by 0.025 points.
+
+```{r}
+final_model <- model
+muhat.bpm <- fitted(final_model, estimator = "BPM")
+hist(muhat.bpm)
+qqnorm(muhat.bpm)
+```
+
+A histogram of the fitted values of the model suggests that it is fairly right skewed, but a look at the Quantile-Quantile plot shows that there is, at most, a slight skew to the data. 
+
+We can also visualize how often each variable is included all of the models:
+```{r}
+image(final_model, rotate = F)
+```
+
+* * *
+  
+## Part 5: Prediction
+For my prediction, I will be taking a look at the documentary "OJ: Made in America", which takes a look at OJ Simspon, a Natoinal Football League running back in the 1970s and his infamous murder trial that captured America in the 90s.
+```{r}
+oj <- data.frame(feature_film = "no", drama = "no", runtime = 467, mpaa_rating_R = "no", thtr_rel_year = 2016, oscar_season = "no", summer_season = "yes", imdb_rating = 9.0, imdb_num_votes = 12637, critics_score = 100, best_pic_nom = "no", best_pic_win = "yes", best_actor_win = "no", best_actress_win = "no", best_dir_win = "no", top200_box = "no")
+
+oj_predict <- predict(final_model, oj, estimator = "BMA", prediction = TRUE, se.fit = TRUE)
+confint(oj_predict)
+```
+The model's prediction of 93.6% audience score is very close to the actual audience score on Rotten Tomatoes of 98%. The 95% credible interval of (64.6,100) (since a score above 100 is not possible) also contains the true audience score which indicates that the model is sufficient estimator of an audiences RT score.
+
+* * *
+  
+## Part 6: Conclusion
+I was surprised to find that *best_pic_nom* was not one of the variables selected and only had a posterior probability of .13 considering that it was one of the variables included in my linear regression model from the last section. In fact, when comparing the two predictions of the OJ documentary, the linear regression model was the more accurate one (predicted score of 98.9 vs 93.6). With only a sample size of one, though, it cannot be definitively conlcluded which model is better. 
+
+I would have been interested in analyzing a larger dataset with more variables to get a better idea of which factors impact and audiences rating for a movie. Do movies with larger budgets/box office revenues have higher ratings than those that do not? Do sequels actualy have a negative impact on ratings, as is often thought? It also would have been interesting to analyze movies across countries to see if there are any trends; for example, do some countries enjoy action movies more than others? Do any countries consistantly have higher/lower ratings than others? While this was an interesting introductory look at movies, I am now interested in a more in-depth look.
